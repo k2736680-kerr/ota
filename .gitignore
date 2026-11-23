@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Local runtime / artifacts
+runtime/
+output/
+*.log
+_dist/
+*.zip
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local scratch (never commit)
+.tmp_*.py
+.watch*.py
+.monitor_*.py
+.t04.py

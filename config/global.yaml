@@ -1,0 +1,46 @@
+# 全局参数。运行期只读，页面上的临时修改不会写回这里。
+runtime_root: runtime
+probe_interval: 5
+drop_window: 120
+reconnect_timeout: 180
+hung_confirm_times: 3
+# 升级不看总时长，只看有没有进展。眼镜主控走 BLE，实测一轮 550~640 秒，
+# 机器和包不一样还会变，卡一个固定总时长只会把正常升级判成失败。
+# 这里配「连续多少秒完全没有进展才算卡住」：百分比、页面文案、App 的 BLE 日志
+# 三路任一路在变就继续等。手表有新版本时会一路报百分比，所以放宽一些。
+upgrade_stall_timeout: 300
+# 探测「还在动」用的 logcat tag。daecho 升级时 X-LOG 一直在刷 BLE 命令回执，空闲时为 0。
+progress_logcat_tag: "X-LOG:V"
+inject_fallback_delay: 15
+min_battery: 20
+max_consecutive_skip: 3
+# 相邻两条用例之间的间隔秒数（第一条不等）。
+# 手表连续升级时偶尔来不及准备下一次握手；眼镜则靠 _open_ready 排水上一轮。
+# 20 秒足够握手恢复，又比原先 30 秒少一段空白等待。
+case_gap_seconds: 20
+# 单条用例失败后自动重拉几次。
+# 手表 DFU 传输偶尔会在几秒内自己失败（App 报 upgrade error: DFU process failed.），
+# 重新点一次升级通常就能过去。这是设备侧偶发，不是判定逻辑的问题。
+# 只对「升级失败/没跑起来」这类可恢复情况重试；没有可升级包、电量不足、
+# 设备失联这些重试也没用，直接照原样返回。
+case_retry_times: 2
+# 单轮执行出现代码异常时，最多连续几条就终止整个任务。
+# 一条用例偶发异常不该毁掉整场全量，但连续异常说明环境或代码真有问题，该停。
+max_consecutive_error: 2
+adb_path: adb
+# 界面快照缓存秒数。一次判定里的多次读页面/读前台包名只在这么短的窗口内复用。
+# 升级等待循环每圈会 mark_stale；缓存只服务同一圈内的多次 _has。
+# 快机上 2 秒太长，容易日志进度落后手机，改 0.5。
+ui_cache_ttl: 0.5
+# S2 后台模型：multi=同一机型可同时存在 A→B 与 B→A；single=同一时刻只生效一条，方向不符时暂停等人切配置。
+s2_model: multi
+screenshot_on:
+  - upgrade_start
+  - inject
+  - reconnect
+  - judge
+# 通道 B / 环境自检的正则，ROM 输出不一致时只改这里。
+patterns:
+  bt_state_on: "(?i)state:\\s*ON|enabled:\\s*true|BluetoothAdapter.*STATE_ON"
+  airplane_off: "(?i)mAirplaneModeOn\\s*=\\s*false|airplane.?mode\\s*[:=]\\s*(off|false|0)"
+  screen_unlocked: "(?i)mDreamingLockscreen\\s*=\\s*false|isStatusBarKeyguard\\s*=\\s*false|mShowingLockscreen\\s*=\\s*false"

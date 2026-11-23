@@ -1,0 +1,18 @@
+"""调度与判定。不直接发 adb 命令。"""
+
+# 结果码，与建设方案表 8 一致。
+PASS = "PASS"
+FAIL_UPGRADE = "FAIL_UPGRADE"
+HUNG_DEVICE = "HUNG_DEVICE"
+SKIP = "SKIP"
+ABORT_ENV = "ABORT_ENV"
+STALE_POLICY = "STALE_POLICY"
+
+CELL_MAP = {
+    PASS: "PASS",
+    FAIL_UPGRADE: "FAIL",
+    HUNG_DEVICE: "HUNG",
+    SKIP: "SKIP",
+    ABORT_ENV: "SKIP",
+    STALE_POLICY: "SKIP",
+}

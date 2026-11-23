@@ -1,0 +1,28 @@
+穿戴 OTA 便携版
+
+给别人：只需拷贝 WearableOTA.exe 这一个文件。
+
+使用：
+1. 放到任意可写文件夹（建议英文路径，不要放只读目录）
+2. 手机开 USB 调试，只连一台，并在手机上点允许
+3. 双击 WearableOTA.exe，桌面会弹出「穿戴 OTA」窗口（tk 窗口，不另开浏览器）
+4. 关掉这个窗口就是停止。任务还在跑时会先问一句
+5. 打不开时会弹出错误提示，不会闪一下就没了
+
+数据（首次运行自动出现在 exe 旁边，不要和 exe 打在一起）：
+- WearableOTA_data\config\          配置。已存在的文件不会被新 exe 覆盖；要用新默认配置，删掉对应文件再启动
+- WearableOTA_data\output\          报告、日志、截图
+- WearableOTA_data\runtime\         临时文件。页面上可以清空，清空不会删配置和 adb
+- WearableOTA_data\runtime_tools\   自带的 adb.exe 和两个 dll
+- 首次启动可能在 exe 旁出现 _MEI* 临时目录，属正常，退出后可删
+- 若提示 Could not create temporary directory，把 exe 放到 D: 等可写磁盘再双击
+
+注意：
+- 本工具不修改 PHP 后台
+- 自带 adb。如果和本机其他 adb 抢服务，先关掉别的占用手机的工具
+- 8765 已被占用时不会再开第二个，看弹窗提示即可
+- 开发时 python start.py 仍走浏览器；发给别人的是这个窗口版 exe
+
+开发者重新打包：
+  powershell -ExecutionPolicy Bypass -File .\打包exe.ps1
+  产物：_dist\WearableOTA.exe

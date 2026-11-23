@@ -1,0 +1,81 @@
+# daecho 眼镜。包名 com.moyoung.glasses。
+# 路径：首页 → 设置 → 固件 → 升级。
+# 升级页有两块固件：主控、影音。任务可以只勾一块，也可以两块都勾。
+# 2026-11-16：device_name / device_mac 留空，换副眼镜不用改 yaml；运行时按包名 GATT 识别。
+name: daecho
+app_name: daecho
+enabled: true
+# 固件同时走蓝牙和 Wi-Fi。关 Wi-Fi 会把这一次升级打断，和关蓝牙一样，要重新点升级。
+# transport 仍标 bluetooth：手表/戒指才是「只走蓝牙、关 Wi-Fi 不能失败」。
+# 眼镜走不走 Wi-Fi 由用例里的 wifi_upgrade_links 决定。
+transport: bluetooth
+pkg: com.moyoung.glasses
+launch_activity: com.moyoung.glasses.MainActivity
+device_keywords: ["眼镜", "V06", "Y01", "Glass"]
+device_name: ""
+device_mac: ""
+ui_connected: ["已连接"]
+ui_disconnected: ["未连接", "连接失败", "未配对", "连接中"]
+# 「已是最新版本」不是升级成功：它表示后台没有可升级的包。
+# 眼镜流程把它单独判成 latest，记 ABORT_ENV 并停止任务，不要混进成功文案里。
+success_texts: ["升级成功", "升级完成"]
+failure_texts: ["升级失败", "固件升级失败", "下载失败", "传输失败"]
+running_texts: ["正在升级", "升级中", "下载中", "传输中", "写入中"]
+offer_texts: ["发现新版本", "有新版本", "新版本"]
+login_texts: ["登录", "请先登录", "注册"]
+# 启动会先弹 App 自身更新，不是眼镜固件。只点取消。
+app_update_cancel: 取消
+app_update_titles: ["发现新版本"]
+scrolls: 4
+# 默认只升主控。页面勾选会覆盖这里。
+firmware_targets: ["mcu"]
+firmware_modules:
+  mcu:
+    label: 主控
+    title: 主控固件版本
+    action: 升级至最新版本
+    latest: 已是最新版本
+  media:
+    label: 影音
+    title: 影音固件版本
+    action: 升级至最新版本
+    latest: 已是最新版本
+locators:
+  settings_tab: {type: text, value: "设置"}
+  firmware_menu: {type: text, value: "固件"}
+  upgrade_entry: {type: resourceId, value: "com.moyoung.glasses:id/rl_device_update"}
+  upgrade_entry_text: {type: text, value: "升级"}
+  firmware_info: {type: text, value: "固件信息"}
+  new_firmware_dot: {type: resourceId, value: "com.moyoung.glasses:id/view_new_firmware"}
+  back_button: {type: resourceId, value: "com.moyoung.glasses:id/btn_title_bar_back"}
+  app_update_cancel: {type: resourceId, value: "com.moyoung.glasses:id/btn_cancle"}
+  # 不要写死某一副眼镜的名字/MAC。连接文案用通用「已连接」。
+  device_name: {type: text, value: ""}
+  device_mac: {type: text, value: ""}
+  connect_state: {type: text, value: "已连接"}
+  # 升级页按钮随后台配置变化：有包时是「升级」，没包时是「已是最新版本」。
+  upgrade_button: {type: text, value: "升级"}
+  latest_button: {type: text, value: "已是最新版本"}
+  done_button: {type: text, value: "完成"}
+  progress_text: {type: regex, value: "\\d+%"}
+  progress_keywords: ["正在升级", "升级中", "下载中", "传输中", "写入中"]
+  # 不绑 resourceId：换机 / App 改版只要文案还在就不用改。真机也按「当前版本：」解析。
+  version_field: {type: textContains, value: "当前版本："}
+  announced_field: {type: textContains, value: "当前版本："}
+  githash_field: {type: text, value: ""}
+  app_version_field: {type: text, value: ""}
+commands:
+  kill: "am force-stop {pkg}"
+  launch: "monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+  bt_off: "svc bluetooth disable"
+  bt_on: "svc bluetooth enable"
+  wifi_off: "svc wifi disable"
+  wifi_on: "svc wifi enable"
+  home: "input keyevent 3"
+  screen_off: "input keyevent 223"
+  screen_on: "input keyevent 224"
+  unlock: "input keyevent 82"
+log_export:
+  support: false
+  steps: []
+  device_path: ""

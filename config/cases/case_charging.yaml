@@ -1,0 +1,8 @@
+id: T09
+name: 充电中升级
+column: 充电中升级
+require_charging: true
+inject: []
+expect:
+  reconnect: true
+  upgrade_final: success

@@ -1,0 +1,13 @@
+id: T07
+name: 升级中 APP 切后台
+column: APP放后台
+trigger:
+  keywords: ["正在升级", "传输中", "升级中", "写入中"]
+  progress_ge: 20
+  fallback_delay: 15
+inject:
+  - {action: home, wait_after: 8}
+  - {action: launch, wait_after: 5}
+expect:
+  reconnect: true
+  upgrade_final: success

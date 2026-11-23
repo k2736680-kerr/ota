@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>穿戴 OTA 自动化</title>
+  <link rel="stylesheet" href="/static/css/app.css?v=20261117ux">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>穿戴 OTA</h1>
+      <p id="notice">本工具不修改后台升级配置。</p>
+    </div>
+    <div class="device-pill" id="device">检测中…</div>
+  </header>
+  <main class="workspace">
+    <section class="task-panel" id="task-panel">
+      <div class="panel-head">
+        <h2>任务</h2>
+        <span class="link-chip" id="link-chip">—</span>
+      </div>
+      <div class="grid setup-grid">
+        <div>
+          <label>App</label>
+          <select id="link"></select>
+        </div>
+        <div>
+          <label>断开观察窗（秒）</label>
+          <input id="drop" type="number" min="1" value="120">
+        </div>
+        <div>
+          <label>重连超时（秒）</label>
+          <input id="timeout" type="number" min="1" value="180">
+        </div>
+      </div>
+      <div class="identity-head">
+        <h3>设备信息</h3>
+        <span class="status-dot" id="identity-status">待刷新</span>
+      </div>
+      <div class="identity" id="identity">
+        <div><label>手机型号</label><input id="manual-phone" placeholder="刷新后自动填入"></div>
+        <div><label>系统版本</label><input id="manual-android" placeholder="刷新后自动填入"></div>
+        <div><label>APP 版本</label><input id="manual-app" placeholder="按当前 App 读取"></div>
+        <div><label>穿戴设备</label><input id="manual-device" placeholder="从蓝牙记录读取"></div>
+        <div class="span-2"><label>githash</label><input id="manual-hash" placeholder="版本号里带 git 描述时自动填入"></div>
+      </div>
+      <h3 id="firmware-heading" hidden>固件模块</h3>
+      <div id="firmware-targets" class="case-tools" hidden></div>
+      <div class="case-tools">
+        <button id="check-all" class="secondary" type="button">全选</button>
+        <button id="check-none" class="secondary" type="button">取消全选</button>
+        <button id="run-all" class="secondary" type="button">全量运行</button>
+        <span class="meta">每条单独填次数。只勾一条并填 100，就反复跑这一条 100 次。</span>
+      </div>
+      <div class="case-list" id="cases"></div>
+      <div class="actions sticky-actions">
+        <button id="start" type="button">开始任务</button>
+        <button id="stop" class="stop" type="button">停止任务</button>
+        <button id="resume" class="secondary" type="button">继续</button>
+        <button id="refresh" class="secondary" type="button">刷新设备</button>
+        <button id="switch-check" class="secondary" type="button">蓝牙/Wi-Fi自检</button>
+        <button id="cleanup" class="secondary" type="button">清空临时目录</button>
+      </div>
+    </section>
+    <div class="side">
+      <section>
+        <h2>运行</h2>
+        <div class="meta" id="progress">空闲</div>
+        <div class="steps" id="steps"></div>
+        <div class="stats">
+          <div class="stat pass"><b id="c-pass">0</b><span>成功</span></div>
+          <div class="stat fail"><b id="c-fail">0</b><span>失败</span></div>
+          <div class="stat hung"><b id="c-hung">0</b><span>死机</span></div>
+          <div class="stat"><b id="c-skip">0</b><span>跳过</span></div>
+        </div>
+        <div id="verdict" class="verdict">尚未开始</div>
+        <pre id="log"></pre>
+      </section>
+      <section>
+        <h2>报告</h2>
+        <table>
+          <thead><tr><th>任务</th><th>HTML</th><th>CSV</th></tr></thead>
+          <tbody id="report-body"></tbody>
+        </table>
+        <pre class="meta" id="dirs"></pre>
+      </section>
+    </div>
+  </main>
+  <div id="toast" class="toast" hidden></div>
+  <script src="/static/js/api.js?v=20261117ux"></script>
+  <script src="/static/js/report.js?v=20261117ux"></script>
+  <script src="/static/js/task.js?v=20261117ux"></script>
+</body>
+</html>

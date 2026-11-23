@@ -1,0 +1,62 @@
+# Da Ring。包名 com.moyoung.ring。2026-11-12 用 1.3.0 真机核对；2026-11-16 改为不写死具体戒指。
+# 路径：我的 → 固件升级 → 固件升级。
+# 升级页没有百分比。进度在 logcat ring_tag 的 onProgressChanged。
+# 设备没连上时升级页只有当前版本，没有按钮；连上且后台有包时按钮是「更新到最新版本」。
+# device_name / device_mac 留空：任务开始时从「我的」页控件和 GATT 自动识别当前绑定戒指。
+name: Da Ring
+app_name: Da Ring
+enabled: true
+# 固件经蓝牙传输。关 Wi-Fi 不能导致升级失败。
+transport: bluetooth
+pkg: com.moyoung.ring
+launch_activity: com.moyoung.ring.MainActivity
+device_keywords: ["戒指", "Ring"]
+device_name: ""
+device_mac: ""
+ui_connected: ["已连接"]
+# 「连接中」是回连过程，不是断开。放进未连接里会把正常回连判成死机。
+ui_disconnected: ["未连接", "连接失败", "未配对"]
+success_texts: ["升级成功", "升级完成", "更新成功", "更新完成"]
+failure_texts: ["升级失败", "固件升级失败", "下载失败", "传输失败"]
+running_texts: ["正在固件升级", "正在升级", "传输中", "写入中", "升级中"]
+offer_texts: ["有新版本可以更新", "发现新版本", "新版本"]
+login_texts: ["登录", "请先登录", "注册"]
+scrolls: 6
+locators:
+  # 底部「我的」。设备卡片和固件入口都在这一页。
+  device_tab: {type: index, value: {resourceId: "com.moyoung.ring:id/navigation_user", index: 0}}
+  device_name: {type: resourceId, value: "com.moyoung.ring:id/tv_user_device_name"}
+  device_mac: {type: resourceId, value: "com.moyoung.ring:id/tv_user_device_address"}
+  connect_state: {type: resourceId, value: "com.moyoung.ring:id/tv_user_device_connect_state"}
+  # 我的页菜单。点进去是固件菜单，不是升级页。
+  upgrade_entry: {type: text, value: "固件升级"}
+  firmware_menu_upgrade: {type: resourceId, value: "com.moyoung.ring:id/tv_firmware_upgrade"}
+  upgrade_button: {type: resourceId, value: "com.moyoung.ring:id/btn_upgrade"}
+  upgrade_button_text: {type: text, value: "更新到最新版本"}
+  # 成功是弹窗「升级成功!」+「好的」；失败才常见「完成」。两种都认。
+  done_button: {type: text, value: "好的"}
+  done_button_text: {type: text, value: "完成"}
+  back_button: {type: resourceId, value: "com.moyoung.ring:id/iv_title_back"}
+  progress_text: {type: regex, value: "\\d+%"}
+  upgrade_state: {type: resourceId, value: "com.moyoung.ring:id/tv_current_state"}
+  progress_keywords: ["正在固件升级", "正在升级", "传输中", "写入中", "升级中"]
+  # 真机核对：升级页 text="当前版本:USY-I403-1.1.9"。换机/改版只要这句还在就不用改。
+  version_field: {type: textContains, value: "当前版本"}
+  announced_field: {type: textContains, value: "当前版本"}
+  githash_field: {type: text, value: ""}
+  app_version_field: {type: text, value: ""}
+commands:
+  kill: "am force-stop {pkg}"
+  launch: "monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+  bt_off: "svc bluetooth disable"
+  bt_on: "svc bluetooth enable"
+  wifi_off: "svc wifi disable"
+  wifi_on: "svc wifi enable"
+  home: "input keyevent 3"
+  screen_off: "input keyevent 223"
+  screen_on: "input keyevent 224"
+  unlock: "input keyevent 82"
+log_export:
+  support: false
+  steps: []
+  device_path: ""

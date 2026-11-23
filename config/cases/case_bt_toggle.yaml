@@ -1,0 +1,14 @@
+id: T05
+name: 升级中关闭手机蓝牙再打开
+column: 升级中关蓝牙
+trigger:
+  keywords: ["正在升级", "传输中", "升级中", "写入中"]
+  progress_ge: 20
+  fallback_delay: 15
+inject:
+  - {action: bt_off, wait_after: 5}
+  - {action: bt_on, wait_after: 8}
+expect:
+  reconnect: true
+  # 断蓝牙会打断这一次。蓝牙恢复后必须重新点升级，并且这一次成功。
+  upgrade_final: retry_success

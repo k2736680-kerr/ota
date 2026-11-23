@@ -1,0 +1,16 @@
+id: T06
+name: 升级中关闭 Wi-Fi 再打开
+column: 升级中关WiFi
+trigger:
+  keywords: ["正在升级", "传输中", "升级中", "写入中"]
+  progress_ge: 20
+  fallback_delay: 15
+inject:
+  - {action: wifi_off, wait_after: 5}
+  - {action: wifi_on, wait_after: 5}
+expect:
+  reconnect: true
+  # 手表、戒指固件只走蓝牙，关 Wi-Fi 这一次也不能失败。
+  # 眼镜固件同时走蓝牙和 Wi-Fi，关 Wi-Fi 和关蓝牙一样会打断这一次，必须重新点升级并成功。
+  upgrade_final: success
+  wifi_upgrade_links: ["glass"]

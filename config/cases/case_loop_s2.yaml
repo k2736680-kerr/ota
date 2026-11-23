@@ -1,0 +1,8 @@
+id: T03
+name: A/B 交替升级
+column: 反复升级
+strategy: s2
+inject: []
+expect:
+  reconnect: true
+  upgrade_final: success

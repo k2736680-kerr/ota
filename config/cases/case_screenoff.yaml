@@ -1,0 +1,14 @@
+id: T08
+name: 升级中 APP 息屏
+column: APP息屏
+trigger:
+  keywords: ["正在升级", "传输中", "升级中", "写入中"]
+  progress_ge: 20
+  fallback_delay: 15
+inject:
+  - {action: screen_off, wait_after: 8}
+  - {action: screen_on, wait_after: 1}
+  - {action: unlock, wait_after: 2}
+expect:
+  reconnect: true
+  upgrade_final: success

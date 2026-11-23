@@ -1,0 +1,8 @@
+id: T01
+name: 基线升级
+column: 基线升级
+strategy:
+inject: []
+expect:
+  reconnect: true
+  upgrade_final: success

@@ -1,0 +1,14 @@
+id: T04
+name: 升级中杀掉 APP 再打开
+column: 升级中杀APP
+trigger:
+  keywords: ["正在升级", "传输中", "升级中", "写入中"]
+  progress_ge: 20
+  fallback_delay: 15
+inject:
+  - {action: kill, wait_after: 10}
+  - {action: launch, wait_after: 20}
+expect:
+  reconnect: true
+  # 杀掉会打断这一次。之后必须重新点升级，并且这一次成功。
+  upgrade_final: retry_success

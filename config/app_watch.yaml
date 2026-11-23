@@ -1,0 +1,75 @@
+# DaFit。点击只认文字；resourceId 充要时备用。
+# 2026-11-13 用调试包 2.9.23 在 Ultima Flex 上核对；2026-11-16 去掉写死的表名/MAC。
+# 底部设备入口没有文字，按标签序号点（共 4 个 tab，设备页是第 3 个，index=2）。
+# 「固件升级」在设备页要向下滚才看得到，scrolls 给足。
+# device_name / device_mac 留空：任务开始时按包名 GATT + 关键字自动识别当前表。
+name: DaFit
+app_name: DaFit
+enabled: true
+# DaFit 固件经蓝牙传输。关 Wi-Fi 不能导致升级失败。
+transport: bluetooth
+pkg: com.crrepa.band.dafit
+launch_activity: com.crrepa.band.my.MainActivity
+device_keywords: ["手表", "Ultima", "Flex", "Watch"]
+device_name: ""
+device_mac: ""
+ui_connected: ["已连接"]
+ui_disconnected: ["未连接", "连接失败", "未配对", "连接中"]
+success_texts: ["升级成功", "升级完成", "已是最新版本", "已是最新"]
+failure_texts: ["固件升级失败", "升级失败"]
+running_texts: ["正在固件升级", "正在升级", "传输中", "写入中", "升级中"]
+offer_texts: ["有新版本可以更新", "发现新版本", "新版本"]
+latest_texts: ["您的固件是最新版本", "已是最新版本"]
+login_texts: ["登录", "请先登录", "手机号登录", "注册"]
+scrolls: 8
+version_store:
+  # 仅调试包可读。手表升级页只有「目标版本」，实报版本只在 App 本地存储里。
+  # current 是权威来源；last 用来交叉验证，两个都读到且不一致时会在备注里提示。
+  files:
+    current: config.xml:band_version
+    last: config.xml:last_band_firmware
+    target: crp.xml:firmware_version
+locators:
+  device_tab: {type: index, value: {resourceId: "com.crrepa.band.dafit:id/iv_tab_item", index: 2}}
+  device_card: {type: textContains, value: "已连接"}
+  # 2.9.23 起设备名和 MAC 是顶部大标题，没有独立 resourceId。
+  # 不要把具体表名/MAC 写进定位；页面判断靠连接状态控件。
+  device_name: {type: text, value: ""}
+  device_mac: {type: text, value: ""}
+  connect_state: {type: text_then_id, value: {text: "已连接", resourceId: "com.crrepa.band.dafit:id/tv_band_connect_state"}}
+  upgrade_entry: {type: text, value: "固件升级"}
+  upgrade_button: {type: text, value: "升级"}
+  # 3 套页面各用各的控件，别混：
+  #   待升级   btn_firmware_upgrade + tv_firmware_version + tv_firmware_describe
+  #   升级中   pb_upgrade_percent + tv_upgrade_percent + tv_upgrade_state
+  #   成功/失败 btn_upgrade_complete / md_buttonDefaultPositive
+  #   已是新版 tv_device_firmware_version + tv_device_macaddr
+  done_button: {type: resourceId, value: "com.crrepa.band.dafit:id/btn_upgrade_complete"}
+  done_button_text: {type: text, value: "完成"}
+  back_button: {type: resourceId, value: "com.crrepa.band.dafit:id/iv_title_back"}
+  offer_text: {type: textContains, value: "新版本"}
+  progress_text: {type: regex, value: "\\d+%"}
+  upgrade_percent: {type: resourceId, value: "com.crrepa.band.dafit:id/tv_upgrade_percent"}
+  upgrade_state: {type: resourceId, value: "com.crrepa.band.dafit:id/tv_upgrade_state"}
+  progress_keywords: ["正在固件升级", "升级中", "传输中", "写入中", "下载中"]
+  # 版本号本身是节点文字（如 MOY-BZH2-2.0.3）。用场景文案区分实报/目标，不绑 resourceId。
+  # 最新页：「您的固件是最新版本!」+ 固件号 = 实报；待升级页：「有新版本可以更新」+ 固件号 = 目标。
+  version_field: {type: textContains, value: "您的固件是最新版本"}
+  announced_field: {type: textContains, value: "有新版本可以更新"}
+  githash_field: {type: text, value: ""}
+  app_version_field: {type: text, value: ""}
+commands:
+  kill: "am force-stop {pkg}"
+  launch: "monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+  bt_off: "svc bluetooth disable"
+  bt_on: "svc bluetooth enable"
+  wifi_off: "svc wifi disable"
+  wifi_on: "svc wifi enable"
+  home: "input keyevent 3"
+  screen_off: "input keyevent 223"
+  screen_on: "input keyevent 224"
+  unlock: "input keyevent 82"
+log_export:
+  support: false
+  steps: []
+  device_path: ""

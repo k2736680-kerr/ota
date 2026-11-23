@@ -1,0 +1,9 @@
+id: T02
+name: 单版本反复升级
+column: 反复升级
+strategy: s1
+same_version: true
+inject: []
+expect:
+  reconnect: true
+  upgrade_final: success
