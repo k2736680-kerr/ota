@@ -792,6 +792,24 @@ class PhoneCompatTest(unittest.TestCase):
         self.assertTrue(parse_battery("level: 40\nstatus: 2\n")[1])
         self.assertTrue(parse_battery("level: 100\nstatus: 5\n")[1])
 
+    def test_wearable_charging_reads_app_page_not_phone(self):
+        from server.drivers.phone_ui import wearable_charging_from_page
+
+        pkg = "com.moyoung.glasses"
+        charging = (
+            f'<node package="{pkg}" text="已连接" />'
+            f'<node package="{pkg}" text="充电中 82%" />'
+            f'<node package="com.android.systemui" text="充电中" />'
+        )
+        self.assertEqual(wearable_charging_from_page(charging, pkg), "充电中")
+        need_charge = (
+            f'<node package="{pkg}" text="请给设备充电" />'
+            f'<node package="{pkg}" text="只有当电池充电超过 60% 时，才能进行版本升级。" />'
+        )
+        self.assertEqual(wearable_charging_from_page(need_charge, pkg), "")
+        idle = f'<node package="{pkg}" text="已连接" /><node package="{pkg}" text="固件" />'
+        self.assertEqual(wearable_charging_from_page(idle, pkg), "")
+
     def test_connection_label_ignores_substring_and_status_bar(self):
         from server.drivers.phone_ui import label_connected
 
@@ -858,6 +876,38 @@ class PhoneCompatTest(unittest.TestCase):
         # 这台 OPPO 上 settings put 被 WRITE_SECURE_SETTINGS 挡住，写了也不生效，
         # 所以不要再假装改系统设置：真正让屏幕灭掉的就是 223。
         self.assertNotIn("settings put global stay_on_while_plugged_in", joined)
+
+    def test_t08_holds_screen_off_long_enough_and_monitors(self):
+        """息屏不能只瞎睡几秒：要够久，且保持期间会打点。"""
+        from server.common.config_loader import case_by_id
+        from server.scripts.run_dafit_flow import DafitFlow
+
+        case = case_by_id("T08")
+        steps = case.get("inject") or []
+        off = next(step for step in steps if step.get("action") == "screen_off")
+        on = next(step for step in steps if step.get("action") == "screen_on")
+        self.assertGreaterEqual(float(off.get("wait_after") or 0), 60)
+        self.assertGreaterEqual(float(on.get("wait_after") or 0), 1)
+
+        logs: list[str] = []
+
+        class _Probe(DafitFlow):
+            def __init__(self):
+                self.case_id = "T08"
+                self.case_name = "升级中 APP 息屏"
+                self.settings = {}
+                self.stop_check = lambda: False
+
+            def _say(self, message: str, level: str = "INFO") -> None:
+                logs.append(message)
+
+            def _screen_off_pulse(self) -> str:
+                return "日志进度 35%"
+
+        probe = _Probe()
+        probe._hold_screen_off(6, watch=None)
+        self.assertTrue(any("息屏中" in line and "35%" in line for line in logs))
+        self.assertGreaterEqual(sum(1 for line in logs if "息屏中" in line), 1)
 
     def test_screen_on_wakes_and_unlocks(self):
         from server.drivers.phone_ui import PhoneSession
@@ -2075,6 +2125,46 @@ Bonded devices:
         )
         self.assertEqual(watch["mac"], "75:D3:BF:5A:C3:D7")
         self.assertEqual(glass["mac"], "DD:4D:D6:18:0C:4A")
+
+    def test_app_page_fills_name_when_bluetooth_has_none(self):
+        """蓝牙只有 MAC、没有广播名时，要从 App 设备页把名字填上。"""
+        from server.common.device_identity import identity_from_page, resolve_identity
+
+        page = """
+            <node package="com.crrepa.band.dafit" text="Ultima Flex" />
+            <node package="com.crrepa.band.dafit" text="75:D3:BF:5A:C3:D7" />
+            <node package="com.crrepa.band.dafit" text="已连接" />
+            <node package="com.crrepa.band.dafit" text="固件升级" />
+            <node package="com.android.systemui" text="OPPO Phone" />
+        """
+        scraped = identity_from_page(page, "com.crrepa.band.dafit", ["Ultima", "手表"])
+        self.assertEqual(scraped["name"], "Ultima Flex")
+        self.assertEqual(scraped["mac"], "75:D3:BF:5A:C3:D7")
+
+        class Adb:
+            def shell(self, *_args, **_kwargs):
+                # GATT 有 MAC，Bonded 列表故意不给名字。
+                return """
+state: ON
+  com.crrepa.band.dafit (Registered)
+  Connections: 1
+    11-13 10:00:00 - 1ms : 75:D3:BF:5A:C3:D7 (1)
+"""
+
+        identity = resolve_identity(
+            {
+                "pkg": "com.crrepa.band.dafit",
+                "device_keywords": ["Ultima", "手表"],
+                "device_name": "",
+                "device_mac": "",
+                "locators": {},
+            },
+            adb=Adb(),
+            page=page,
+        )
+        self.assertEqual(identity["name"], "Ultima Flex")
+        self.assertEqual(identity["mac"], "75:D3:BF:5A:C3:D7")
+        self.assertEqual(identity["source"], "ui")
 
 
 class SourcePathTest(unittest.TestCase):

@@ -1,6 +1,7 @@
 id: T09
 name: 充电中升级
 column: 充电中升级
+# 要求穿戴设备在充电（App 显示「充电中」等），不是手机 USB 供电。
 require_charging: true
 inject: []
 expect:

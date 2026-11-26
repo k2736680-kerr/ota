@@ -41,6 +41,8 @@ READY_STALL_SECONDS = 90
 # 被切到后台：先温和等（不打断可能还在跑的升级）；超时后强拉前台；再超时整轮失败，禁止无限等。
 BACKGROUND_SOFT_SECONDS = 60
 BACKGROUND_HARD_SECONDS = 180
+# 息屏保持期间每隔多久打一次点。黑屏读不到页面，只能靠日志/心跳证明工具还活着。
+SCREEN_OFF_PULSE_SECONDS = 10
 
 # 值得自动重拉的失败。这些多半是设备侧偶发（DFU 自己断、握手没准备好、单轮代码异常），
 # 重新走一遍通常就过去了。
@@ -153,7 +155,11 @@ class DafitFlow:
         self._identity_bound = False
 
     def _bind_device_identity(self) -> None:
-        """按当前手机上真正绑定的设备补齐 name/mac，不依赖 yaml 写死的某一台。"""
+        """按当前手机上真正绑定的设备补齐 name/mac，不依赖 yaml 写死的某一台。
+
+        蓝牙 dumpsys 经常只有 MAC、没有名字。手表设备名又没有 resourceId。
+        所以先打开设备页，从 App 页面文案里填；蓝牙只作补充。
+        """
         if getattr(self, "_identity_bound", False):
             return
         from server.common.device_identity import apply_identity, resolve_identity
@@ -163,7 +169,20 @@ class DafitFlow:
             self._identity_bound = True
             return
         try:
-            identity = resolve_identity(self.link, adb=self.adb)
+            self._reveal_for_identity()
+            page = ""
+            try:
+                page = self.cache.page() or ""
+            except Exception:
+                page = ""
+
+            def read_text(locator):
+                rid = _resource_id(locator)
+                if rid:
+                    return self._text_of_id(rid) or ""
+                return ""
+
+            identity = resolve_identity(self.link, adb=self.adb, read_text=read_text, page=page)
         except Exception as exc:
             self._say(f"识别设备失败: {exc}")
             self._identity_bound = True
@@ -174,6 +193,16 @@ class DafitFlow:
         mac = identity.get("mac") or ""
         if name or mac:
             self._say(f"识别设备 {name or '?'} {mac}（来源 {identity.get('source')}）")
+        elif not name:
+            self._say("未识别到穿戴设备名称（蓝牙和 App 设备页都没有），报告设备栏可能为空")
+
+    def _reveal_for_identity(self) -> None:
+        """打开能看见设备名的页面。手表是设备 tab。"""
+        self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+        self._back_to_tabs()
+        self._click_tab()
+        time.sleep(0.6)
+        self._touch()
 
     def run(self, case_id: str) -> dict:
         """跑一条用例，失败后按配置自动重拉。
@@ -262,12 +291,21 @@ class DafitFlow:
         self.case_name = name
         self.direction = direction
         self._announce(case)
-        level, charging = self.adb.battery()
+        # 手机电量只用来防止手机自己断电；T09 的「充电中」看的是穿戴设备，不是手机 USB。
+        level, _phone_charging = self.adb.battery()
         minimum = int(self.settings.get("min_battery") or 20)
         if level is not None and level < minimum:
-            return self._row(case_id, "ABORT_ENV", f"电量 {level} 低于 {minimum}", started)
-        if case.get("require_charging") and not charging:
-            return self._row(case_id, "SKIP", "手机未在充电，这条正向用例不执行", started)
+            return self._row(case_id, "ABORT_ENV", f"手机电量 {level} 低于 {minimum}", started)
+        if case.get("require_charging"):
+            hit = self._wearable_charging_label()
+            if not hit:
+                return self._row(
+                    case_id,
+                    "SKIP",
+                    "穿戴设备未在充电（App 未显示充电中），这条正向用例不执行",
+                    started,
+                )
+            self._say(f"[{case_id} {name}] 穿戴设备充电状态：{hit}")
         self.session.prepare_for_app(self.pkg)
         if self._login_blocking():
             return self._row(case_id, "ABORT_ENV", "APP 未登录", started)
@@ -697,7 +735,7 @@ class DafitFlow:
                 if inject_due(percent, self._state_text(), keywords, phase == "running", elapsed, threshold, fallback):
                     self._say(f"[{self.case_id} {self.case_name}] 干扰 进度 {percent if percent is not None else '无'}%")
                     self.trigger = f"进度:{percent}" if percent is not None else "兜底触发"
-                    self._inject(actions)
+                    self._inject(actions, watch=watch)
                     injected = True
                     self.injected = True
                     if self.switch_failed:
@@ -779,14 +817,14 @@ class DafitFlow:
             # 快机进度跳动大：轮询越短，日志越贴手机；0.5s 足够，别再空等 2 秒。
             time.sleep(0.5 if phase == "running" else 1.0)
 
-    def _inject(self, actions: list[tuple[str, str, float]]) -> None:
+    def _inject(self, actions: list[tuple[str, str, float]], watch=None) -> None:
         screen_was_off = False
         for kind, command, wait in actions:
             if kind == "unlock":
                 self._say(f"[{self.case_id}] 解锁")
                 self.session.wake_and_unlock()
             elif kind == "screen_off":
-                self._say(f"[{self.case_id}] 息屏")
+                self._say(f"[{self.case_id}] 息屏，保持 {int(wait) if wait else 0} 秒并继续监测升级")
                 self.session.screen_off()
                 screen_was_off = True
             elif kind == "screen_on":
@@ -806,15 +844,86 @@ class DafitFlow:
             if self.switch_failed:
                 return
             if wait > 0:
-                import time as _time
-
-                _time.sleep(wait)
+                # 息屏这段不能干睡：黑屏读不到页面，要用日志盯着还在不在传，并定时打点。
+                if kind == "screen_off":
+                    self._hold_screen_off(wait, watch)
+                else:
+                    time.sleep(wait)
         # 杀 App / 亮屏后其它 App（眼镜、广告）常抢前台；只 collapse 不够，要强拉回来。
         kinds = {kind for kind, _command, _wait in actions}
         if screen_was_off or "shell" in kinds:
             self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+            if screen_was_off:
+                self._inspect_after_screen_on()
         else:
             self.session.collapse()
+
+    def _hold_screen_off(self, seconds: float, watch=None) -> None:
+        """息屏保持：期间禁止读页面（会触发点亮），只靠日志/心跳证明还在跑。"""
+        deadline = time.time() + max(0.0, float(seconds))
+        last_pulse = 0.0
+        while time.time() < deadline:
+            if self.stop_check():
+                self._say(f"[{self.case_id}] 息屏等待被停止")
+                return
+            now = time.time()
+            moved = False
+            if watch is not None:
+                try:
+                    moved = bool(watch.see(percent=None, page=""))
+                except Exception:
+                    moved = False
+            pulse = ""
+            try:
+                pulse = self._screen_off_pulse() or ""
+            except Exception:
+                pulse = ""
+            if pulse and watch is not None:
+                watch.note_progress()
+                moved = True
+            remain = max(0, int(deadline - now))
+            if moved or now - last_pulse >= SCREEN_OFF_PULSE_SECONDS:
+                if pulse:
+                    self._say(f"[{self.case_id}] 息屏中，{pulse}（还剩 {remain} 秒）")
+                elif moved:
+                    self._say(f"[{self.case_id}] 息屏中，传输仍在推进（还剩 {remain} 秒）")
+                else:
+                    idle = int(watch.idle_seconds()) if watch is not None else 0
+                    self._say(
+                        f"[{self.case_id}] 息屏中，已 {idle} 秒未见新进展（还剩 {remain} 秒）"
+                    )
+                last_pulse = now
+            time.sleep(2.0)
+
+    def _screen_off_pulse(self) -> str:
+        """息屏时子类可从日志读进度。默认靠 ProgressWatch 的传输日志。"""
+        return ""
+
+    def _inspect_after_screen_on(self) -> None:
+        """息屏结束主动亮屏后，立刻看升级还在不在、成没成。"""
+        self._touch()
+        try:
+            phase = self._phase()
+        except Exception as exc:
+            self._say(f"[{self.case_id}] 亮屏复查失败: {exc}")
+            return
+        percent = None
+        try:
+            percent = self._percent()
+        except Exception:
+            percent = None
+        if phase == "running":
+            self._say(
+                f"[{self.case_id}] 亮屏复查：升级仍在进行，进度 {_percent_label(percent)}"
+            )
+        elif phase == "success":
+            self._say(f"[{self.case_id}] 亮屏复查：升级已成功")
+        elif phase == "failure":
+            self._say(f"[{self.case_id}] 亮屏复查：升级已失败")
+        else:
+            self._say(
+                f"[{self.case_id}] 亮屏复查：页面={phase} 进度 {_percent_label(percent)}"
+            )
 
     def _verify_switch(self, kind: str) -> None:
         """命令返回成功不代表开关真的变了。要趁它还没被下一步开回去时立刻读。"""
@@ -1160,6 +1269,43 @@ class DafitFlow:
             if phrase and self._has(phrase):
                 return phrase
         return f"升级失败，最后进度 {_percent_label(percent)}"
+
+    def _wearable_charging_label(self) -> str:
+        """T09：穿戴设备是否在充电。只认 App 页面，不认手机 dumpsys battery。"""
+        from server.drivers.phone_ui import wearable_charging_from_page
+
+        self._reveal_for_charging()
+        page = ""
+        try:
+            page = self.cache.page() or ""
+        except Exception:
+            try:
+                page = self.cache.cached_page() or ""
+            except Exception:
+                page = ""
+        texts = list(self.link.get("charging_texts") or [])
+        hit = wearable_charging_from_page(page, self.pkg, texts)
+        if hit:
+            return hit
+        locator = (self.link.get("locators") or {}).get("charging_state")
+        if locator:
+            value = locator.get("value") if isinstance(locator, dict) else ""
+            needle = ""
+            if isinstance(value, dict):
+                needle = str(value.get("text") or value.get("textContains") or value.get("resourceId") or "")
+            else:
+                needle = str(value or "")
+            if needle and (self._has(needle) or self._exists_id(needle)):
+                return needle
+        return ""
+
+    def _reveal_for_charging(self) -> None:
+        """把设备页（带电量/充电文案的那页）露出来，再读充电状态。"""
+        self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+        self._back_to_tabs()
+        self._click_tab()
+        time.sleep(0.6)
+        self._touch()
 
     def _on_device_page(self) -> bool:
         """是否停在设备页。

@@ -34,7 +34,17 @@ class BaseLink:
         page = self.ui.page_text()
         logged_in = not any(word in page for word in self.link.get("login_texts") or [])
         entry = self.upgrade_available()
-        level, charging = self.adb.battery()
+        # battery 仍是手机电量（防手机自己断电）；charging 改成穿戴设备是否在充电。
+        level, _phone_charging = self.adb.battery()
+        from server.drivers.phone_ui import wearable_charging_from_page
+
+        device_charging = bool(
+            wearable_charging_from_page(
+                page,
+                self.link.get("pkg") or "",
+                list(self.link.get("charging_texts") or []),
+            )
+        )
         device_name = self.ui.read_text(self.link["locators"].get("device_name"))
         return {
             "reported": versions.get("reported") or "",
@@ -42,7 +52,7 @@ class BaseLink:
             "logged_in": logged_in,
             "entry": entry,
             "battery": level,
-            "charging": charging,
+            "charging": device_charging,
             "githash": versions.get("githash") or "",
             "device_model": device_name or self.link.get("device_name") or "",
         }
@@ -141,14 +151,17 @@ class BaseLink:
                     from server.drivers.phone_ui import PhoneSession
 
                     session = PhoneSession(self.ui.device, self.adb)
-                    self.log(f"注入 {name}")
+                    hold = float(step.get("wait_after") or 0)
                     if name == "screen_off":
+                        self.log(f"注入 screen_off，保持 {int(hold)} 秒并继续监测")
                         session.screen_off()
+                        self._sleep_screen_off(hold)
                     else:
+                        self.log("注入 screen_on")
                         session.screen_on()
+                        self.sleep(hold)
                 except Exception as exc:
                     return False, f"{name} 失败: {exc}"
-                self.sleep(float(step.get("wait_after") or 0))
                 continue
             template = (self.link.get("commands") or {}).get(name)
             if not template:
@@ -162,6 +175,18 @@ class BaseLink:
             self.sleep(float(step.get("wait_after") or 0))
         self.log("注入完成: " + ",".join(item["action"] for item in actions))
         return True, ""
+
+
+    def _sleep_screen_off(self, seconds: float) -> None:
+        """dry-run / 状态机路径：息屏等待也要打点，别一整段静默像死机。"""
+        deadline = time.time() + max(0.0, float(seconds))
+        last = 0.0
+        while time.time() < deadline:
+            now = time.time()
+            if now - last >= 10:
+                self.log(f"息屏中，还剩 {max(0, int(deadline - now))} 秒")
+                last = now
+            self.sleep(min(2.0, max(0.0, deadline - time.time())))
 
 
 def _version_only(text: str) -> str:

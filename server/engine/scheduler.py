@@ -286,9 +286,8 @@ class Scheduler:
 
             record.status = "running"
             adb, ui = self._open_device(record, link, settings, dry_run, manual, logger)
-            if record.link == "ring":
-                # 戒指型号在「我的」页；任务头若只靠 GATT 常为空。先点进「我的」再识别。
-                self._prime_ring_mine(adb, ui, link, logger)
+            # 先打开 App 设备页再识别：蓝牙经常只有 MAC 没有名字，名字要从页面填。
+            self._prime_device_card(adb, ui, link, logger)
             self._capture_identity(record, adb, None, link, manual, ui=ui)
             folder = paths.log_dir(record.slug)
             device = ui.device
@@ -632,33 +631,21 @@ class Scheduler:
         ui = UiDriver.connect(serials[0], link.get("fallback"))
         return adb, ui
 
-    def _prime_ring_mine(self, adb, ui, link: dict, logger) -> None:
-        """打开戒指 App 并点「我的」，方便识别设备名/MAC。失败不阻断任务。"""
+    def _prime_device_card(self, adb, ui, link: dict, logger) -> None:
+        """打开 App 设备卡片页，方便识别设备名/MAC。失败不阻断任务。"""
         pkg = link.get("pkg") or ""
-        if not pkg or ui is None:
+        if not pkg or ui is None or not hasattr(ui, "device"):
             return
         try:
-            from server.drivers.phone_ui import PhoneSession
-            from server.drivers.ui_cache import UiCache
+            from server.common.device_identity import open_device_card
 
-            cache = UiCache(
-                ui.device,
-                ttl=float((load_global() or {}).get("ui_cache_ttl") or 2.0),
-            )
-            session = PhoneSession(ui.device, adb, cache)
-            session.prepare_for_app(pkg, allow_relaunch=True)
-            locator = (link.get("locators") or {}).get("device_tab") or {}
-            value = locator.get("value") if isinstance(locator.get("value"), dict) else {}
-            rid = value.get("resourceId") or ""
-            index = int(value.get("index") or 0)
-            if rid:
-                node = ui.device(resourceId=rid, instance=index)
-                if getattr(node, "exists", False):
-                    node.click()
-                    cache.mark_stale()
-                    time.sleep(0.8)
+            page = open_device_card(ui.device, adb, link)
+            if page:
+                logger.log("已打开 App 设备页，准备识别穿戴设备")
+            else:
+                logger.log("打开 App 设备页未读到内容，稍后再用蓝牙兜底", "WARN")
         except Exception as exc:
-            logger.log(f"戒指进「我的」页识别失败（可忽略）: {exc}", "WARN")
+            logger.log(f"打开 App 设备页识别失败（可忽略）: {exc}", "WARN")
 
     def _capture_identity(self, record, adb, runner, link, manual, ui=None) -> None:
         from server.common.device_identity import apply_identity, looks_like_phone, resolve_identity
@@ -668,11 +655,21 @@ class Scheduler:
         record.android = snap.android
         record.app_version = snap.app_version
         read_text = None
+        page = None
         if runner is not None and getattr(runner, "ui", None) is not None:
             read_text = runner.ui.read_text
-        elif ui is not None and getattr(ui, "read_text", None) is not None:
-            read_text = ui.read_text
-        identity = resolve_identity(link, adb=adb, read_text=read_text)
+            try:
+                page = runner.ui.page_text()
+            except Exception:
+                page = None
+        elif ui is not None:
+            if getattr(ui, "read_text", None) is not None:
+                read_text = ui.read_text
+            try:
+                page = ui.page_text() if hasattr(ui, "page_text") else None
+            except Exception:
+                page = None
+        identity = resolve_identity(link, adb=adb, read_text=read_text, page=page)
         apply_identity(link, identity)
         try:
             env = runner.precheck() if runner is not None else {}

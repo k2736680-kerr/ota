@@ -1,18 +1,51 @@
 """运行时识别当前绑定的穿戴设备。
 
 配置里的 device_name / device_mac 只是可选提示，不能当成唯一真相。
-换表、换镜、换戒后不改 yaml 也要能跑：优先读 App 页面，再从蓝牙 GATT
+换表、换镜、换戒后不改 yaml 也要能跑：优先读 App 设备页，再从蓝牙 GATT
 里按包名找最近连接，最后才用关键字匹配已配对列表。
+
+手表/眼镜设备名常常没有 resourceId，蓝牙 dumpsys 又经常拿不到名字——
+这时必须从 App 页面文案里抠。
 """
 
 from __future__ import annotations
 
 import re
+import time
 
 _MAC = re.compile(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 _BONDED = re.compile(
     r"((?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s*\[[^\]]*\]\s*([^\r\n]+)"
 )
+_CONNECT_WORDS = ("已连接", "未连接", "连接中", "连接失败", "未配对")
+_PAGE_NOISE = {
+    "已连接",
+    "未连接",
+    "连接中",
+    "连接失败",
+    "未配对",
+    "固件升级",
+    "固件",
+    "设置",
+    "我的",
+    "首页",
+    "设备",
+    "升级",
+    "登录",
+    "注册",
+    "取消",
+    "确定",
+    "完成",
+    "好的",
+    "添加设备",
+    "蓝牙",
+    "Wi-Fi",
+    "WIFI",
+    "电量",
+    "充电中",
+    "正在充电",
+    "已充满",
+}
 
 
 def looks_like_phone(name: str, phone_model: str) -> bool:
@@ -71,8 +104,63 @@ def gatt_macs_for_package(raw: str, pkg: str) -> list[str]:
     return macs
 
 
-def resolve_identity(link: dict, *, adb=None, read_text=None) -> dict:
-    """返回 {name, mac, source}。source 便于日志说明识别来源。"""
+def identity_from_page(page: str, pkg: str, keywords: list[str] | None = None) -> dict:
+    """从 App 界面 dump 抠设备名和 MAC。没有 resourceId 时也能用。
+
+    优先：关键字命中的文案；其次：连接状态附近的标题；再其次：像产品名的短文案。
+    不认「已连接 / 固件升级 / 当前版本」这类页面控件词。
+    """
+    from server.common.version_util import _page_texts
+
+    words = [str(item).strip() for item in (keywords or []) if str(item).strip()]
+    raw_texts = [str(item or "").strip() for item in _page_texts(page or "", pkg=pkg or None)]
+    raw_texts = [item for item in raw_texts if item]
+
+    mac = ""
+    for item in raw_texts:
+        found = normalize_mac(item)
+        if found:
+            mac = found
+            break
+    # 有的页面把 MAC 嵌在「地址：AA:BB:…」里，整段不是纯 MAC。
+    if not mac:
+        found = _MAC.search(page or "")
+        if found and (not pkg or f'package="{pkg}"' in (page or "")):
+            mac = found.group(0).upper()
+
+    names = [_clean_name(item) for item in raw_texts]
+    names = [item for item in names if item]
+
+    name = ""
+    for item in names:
+        if _looks_like_device_name(item, words):
+            if words and any(word.lower() in item.lower() for word in words):
+                name = item
+                break
+    if not name:
+        connect_at = -1
+        for index, item in enumerate(names):
+            if item in _CONNECT_WORDS:
+                connect_at = index
+                break
+        window = names[max(0, connect_at - 6) : connect_at] if connect_at > 0 else names[:16]
+        for item in window:
+            if _looks_like_device_name(item, words):
+                name = item
+                break
+    if not name:
+        for item in names:
+            if _looks_like_device_name(item, words):
+                name = item
+                break
+    return {"name": name, "mac": mac}
+
+
+def resolve_identity(link: dict, *, adb=None, read_text=None, page: str | None = None) -> dict:
+    """返回 {name, mac, source}。source 便于日志说明识别来源。
+
+    优先顺序：App 控件/页面文案 → 蓝牙 GATT → 配对列表关键字 → 配置提示。
+    """
     hint_name = (link.get("device_name") or "").strip()
     hint_mac = normalize_mac(link.get("device_mac") or "")
     keywords = [str(item).strip() for item in (link.get("device_keywords") or []) if str(item).strip()]
@@ -81,8 +169,13 @@ def resolve_identity(link: dict, *, adb=None, read_text=None) -> dict:
     ui_mac = ""
     if read_text is not None:
         locators = link.get("locators") or {}
-        ui_name = _clean_name(read_text(locators.get("device_name")))
-        ui_mac = normalize_mac(read_text(locators.get("device_mac")))
+        ui_name = _clean_name(_safe_read(read_text, locators.get("device_name")))
+        ui_mac = normalize_mac(_safe_read(read_text, locators.get("device_mac")))
+
+    if page:
+        scraped = identity_from_page(page, link.get("pkg") or "", keywords)
+        ui_name = ui_name or scraped.get("name") or ""
+        ui_mac = ui_mac or scraped.get("mac") or ""
 
     raw = ""
     if adb is not None:
@@ -109,6 +202,7 @@ def resolve_identity(link: dict, *, adb=None, read_text=None) -> dict:
                     mac = candidate
                     name = label
                     break
+        # GATT 只有 MAC、名字空时，若页面稍后能补上更好；这里先原样返回。
         return {"name": name or bonded.get(mac, ""), "mac": mac, "source": "gatt"}
 
     matched = _match_bonded(bonded, keywords)
@@ -121,6 +215,26 @@ def resolve_identity(link: dict, *, adb=None, read_text=None) -> dict:
         return {"name": name, "mac": mac, "source": "config"}
 
     return {"name": "", "mac": "", "source": "none"}
+
+
+def open_device_card(device, adb, link: dict) -> str:
+    """打开 App 里能看到设备名的那一页，返回页面 dump。失败返回空串。"""
+    pkg = (link or {}).get("pkg") or ""
+    if not pkg or device is None:
+        return ""
+    try:
+        from server.drivers.phone_ui import PhoneSession
+        from server.drivers.ui_cache import UiCache
+
+        cache = UiCache(device, ttl=0.5)
+        session = PhoneSession(device, adb, cache)
+        session.prepare_for_app(pkg, allow_relaunch=True)
+        _goto_device_card(device, link, cache)
+        time.sleep(0.6)
+        cache.mark_stale()
+        return cache.page() or ""
+    except Exception:
+        return ""
 
 
 def apply_identity(link: dict, identity: dict) -> dict:
@@ -209,3 +323,91 @@ def _clean_name(value: str) -> str:
     if _MAC.fullmatch(text):
         return ""
     return text
+
+
+def _safe_read(read_text, locator) -> str:
+    if not locator or not _locator_usable(locator):
+        return ""
+    try:
+        return str(read_text(locator) or "")
+    except Exception:
+        return ""
+
+
+def _locator_usable(locator: dict | None) -> bool:
+    if not isinstance(locator, dict):
+        return False
+    value = locator.get("value")
+    if isinstance(value, dict):
+        return bool(
+            str(value.get("resourceId") or "").strip()
+            or str(value.get("text") or "").strip()
+            or str(value.get("textContains") or "").strip()
+        )
+    return bool(str(value or "").strip())
+
+
+def _looks_like_device_name(text: str, keywords: list[str] | None = None) -> bool:
+    cleaned = _clean_name(text)
+    if not cleaned or cleaned in _PAGE_NOISE:
+        return False
+    if cleaned in _CONNECT_WORDS:
+        return False
+    if "%" in cleaned or "版本" in cleaned or "升级" in cleaned:
+        return False
+    if re.search(r"(?i)当前版本|有新版本|已是最新|MOY-|USY-|githash", cleaned):
+        return False
+    if re.fullmatch(r"\d{1,3}", cleaned):
+        return False
+    if normalize_mac(cleaned):
+        return False
+    if len(cleaned) > 48:
+        return False
+    return True
+
+
+def _goto_device_card(device, link: dict, cache) -> None:
+    """按链路点到设备卡片所在页。眼镜在首页，戒指在「我的」，手表在设备 tab。"""
+    pkg = (link or {}).get("pkg") or ""
+    locators = (link or {}).get("locators") or {}
+
+    if "glasses" in pkg:
+        cancel = (link.get("app_update_cancel") or "取消") if link else "取消"
+        try:
+            node = device(text=str(cancel))
+            if getattr(node, "exists", False):
+                node.click()
+                time.sleep(0.3)
+        except Exception:
+            pass
+        try:
+            home = device(text="首页")
+            if getattr(home, "exists", False):
+                home.click()
+                time.sleep(0.4)
+        except Exception:
+            pass
+        if cache is not None:
+            cache.mark_stale()
+        return
+
+    tab = locators.get("device_tab") or {}
+    value = tab.get("value") if isinstance(tab.get("value"), dict) else {}
+    rid = ""
+    index = 0
+    if isinstance(value, dict):
+        rid = str(value.get("resourceId") or "")
+        index = int(value.get("index") or 0)
+    elif tab.get("type") == "resourceId":
+        rid = str(tab.get("value") or "")
+    if not rid:
+        return
+    try:
+        node = device(resourceId=rid, instance=index)
+        if getattr(node, "exists", False):
+            node.click()
+            time.sleep(0.5)
+            if cache is not None:
+                cache.mark_stale()
+    except Exception:
+        return

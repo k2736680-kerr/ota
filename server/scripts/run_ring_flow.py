@@ -75,11 +75,14 @@ class RingFlow(DafitFlow):
             return self._text_of_id(rid) or ""
 
         try:
-            identity = resolve_identity(self.link, adb=self.adb, read_text=read_text)
-            if not identity.get("mac") and not identity.get("name"):
-                self.session.prepare_for_app(self.pkg, allow_relaunch=True)
-                self._click_mine()
-                identity = resolve_identity(self.link, adb=self.adb, read_text=read_text)
+            self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+            self._click_mine()
+            page = ""
+            try:
+                page = self.cache.page() or ""
+            except Exception:
+                page = ""
+            identity = resolve_identity(self.link, adb=self.adb, read_text=read_text, page=page)
         except Exception as exc:
             self._say(f"识别设备失败: {exc}")
             self._identity_bound = True
@@ -90,6 +93,8 @@ class RingFlow(DafitFlow):
         mac = identity.get("mac") or ""
         if name or mac:
             self._say(f"识别设备 {name or '?'} {mac}（来源 {identity.get('source')}）")
+        else:
+            self._say("未识别到戒指名称（「我的」页和蓝牙都没有）")
 
     def _run(self, case: dict, started: float) -> dict:
         """父类的收口逻辑，额外把「没绑定」判成环境不满足。"""
@@ -99,6 +104,20 @@ class RingFlow(DafitFlow):
             row["note"] = "戒指已从 App 解绑（显示「添加设备」），请先在 App 里重新配对"
             self._save_log("unbound")
         return row
+
+    def _reveal_for_charging(self) -> None:
+        """戒指电量/充电文案在「我的」页设备卡片。"""
+        self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+        self._click_mine()
+        time.sleep(0.6)
+        self._touch()
+
+    def _screen_off_pulse(self) -> str:
+        """息屏时页面读不到。戒指进度只在 ring_tag 的 onProgressChanged。"""
+        found = re.findall(r"onProgressChanged:\s*(\d+)", self._ring_log(800))
+        if not found:
+            return ""
+        return f"日志进度 {found[-1]}%"
 
     def _touched_firmware(self) -> bool:
         """本轮有没有真的开始往戒指里写固件。

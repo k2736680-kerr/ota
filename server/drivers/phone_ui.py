@@ -47,6 +47,29 @@ def label_connected(text: str, connected: list[str], disconnected: list[str]) ->
     return None
 
 
+def wearable_charging_from_page(page: str, pkg: str, charging_texts: list[str] | None = None) -> str:
+    """穿戴设备是否在充电：只看 App 自己的页面文案/content-desc，不看手机 dumpsys。
+
+    「请给设备充电」是电量不够的提示，不是正在充电，不能当成命中。
+    返回命中的那句文案；没有就返回空串。
+    """
+    phrases = [str(item).strip() for item in (charging_texts or []) if str(item).strip()]
+    if not phrases:
+        phrases = ["充电中", "正在充电", "已充满"]
+    from server.common.version_util import _page_texts
+
+    for text in _page_texts(page or "", pkg=pkg or None):
+        cleaned = (text or "").strip()
+        if not cleaned:
+            continue
+        if "请给设备充电" in cleaned or "电量不足" in cleaned:
+            continue
+        for phrase in phrases:
+            if phrase and phrase in cleaned:
+                return phrase
+    return ""
+
+
 def inject_due(
     percent: int | None,
     page: str,

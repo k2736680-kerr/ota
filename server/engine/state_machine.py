@@ -81,10 +81,10 @@ class RoundMachine:
             self.runner.watch("开轮")
         env = self.runner.precheck()
         if env.get("battery") is not None and env["battery"] < self.settings["min_battery"]:
-            self._stop(ABORT_ENV, f"电量 {env['battery']} 低于 {self.settings['min_battery']}")
+            self._stop(ABORT_ENV, f"手机电量 {env['battery']} 低于 {self.settings['min_battery']}")
             return
         if self.case.get("require_charging") and not env.get("charging"):
-            self._stop(SKIP, "未处于充电，T09 不执行")
+            self._stop(SKIP, "穿戴设备未在充电，T09 不执行")
             return
         if not env.get("logged_in", True):
             self._stop(ABORT_ENV, "APP 未登录")

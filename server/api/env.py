@@ -1,4 +1,7 @@
-"""设备探测。刷新时读取手机和当前链路的 App，不打开界面。"""
+"""设备探测。刷新时读取手机和当前链路。
+
+蓝牙 dumpsys 经常拿不到穿戴设备名。名字空时会打开 App 设备页再填一次。
+"""
 
 from __future__ import annotations
 
@@ -121,7 +124,7 @@ def _read_device(adb: AdbDriver, link: dict | None, serial: str) -> dict:
     device_model = ""
     githash = ""
     if link:
-        from server.common.device_identity import resolve_identity
+        from server.common.device_identity import open_device_card, resolve_identity
 
         _installed, app_version = adb.package_version(link["pkg"])
         githash = githash_from_version(app_version)
@@ -131,6 +134,19 @@ def _read_device(adb: AdbDriver, link: dict | None, serial: str) -> dict:
         if not device_model and mac:
             raw = adb.shell("dumpsys bluetooth_manager", check=False)
             device_model = bluetooth_device_name(raw, mac)
+        # 蓝牙还是没有名字：打开 App 设备页，从页面文案填。
+        if not device_model:
+            try:
+                import uiautomator2 as u2
+
+                device = u2.connect(serial)
+                page = open_device_card(device, adb, link)
+                if page:
+                    identity = resolve_identity(link, adb=adb, page=page)
+                    device_model = identity.get("name") or device_model
+                    mac = identity.get("mac") or mac
+            except Exception:
+                pass
     return {
         "serial": serial,
         "model": model,

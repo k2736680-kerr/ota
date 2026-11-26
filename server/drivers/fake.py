@@ -150,8 +150,9 @@ class FakeUiDevice:
     """点击升级后进入传输页；传输页同时带成功文案，dry-run 才能在注入后收口。"""
 
     def __init__(self, idle: str | None = None, busy: str | None = None, strict: bool = False) -> None:
-        self.idle = idle or "已连接 固件升级 立即升级 实报:2.0.0 公布:2.0.1 githash:C07F291"
-        self.busy = busy or "已连接 正在升级 传输中 30% 升级成功 实报:2.0.0 公布:2.0.1 githash:C07F291"
+        # 默认带「充电中」，dry-run 的 T09 才能按穿戴设备充电状态通过。
+        self.idle = idle or "已连接 充电中 固件升级 立即升级 实报:2.0.0 公布:2.0.1 githash:C07F291"
+        self.busy = busy or "已连接 充电中 正在升级 传输中 30% 升级成功 实报:2.0.0 公布:2.0.1 githash:C07F291"
         self.strict = strict
         self.phase = 0
         self.missing: set[str] = set()

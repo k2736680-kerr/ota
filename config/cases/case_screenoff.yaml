@@ -5,9 +5,11 @@ trigger:
   keywords: ["正在升级", "传输中", "升级中", "写入中"]
   progress_ge: 20
   fallback_delay: 15
+# 息屏要够久：黑屏期间工具继续盯传输日志打点，不能干睡像死机。
+# wait_after 是息屏保持秒数；到点再亮屏、解锁，并复查升级是否还正常。
 inject:
-  - {action: screen_off, wait_after: 8}
-  - {action: screen_on, wait_after: 1}
+  - {action: screen_off, wait_after: 60}
+  - {action: screen_on, wait_after: 2}
   - {action: unlock, wait_after: 2}
 expect:
   reconnect: true

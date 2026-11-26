@@ -73,6 +73,22 @@ class GlassFlow(DafitFlow):
         super()._announce(case)
         self._say(f"本次固件 {module_labels(self.modules)}")
 
+    def _reveal_for_charging(self) -> None:
+        """眼镜电量/充电文案在首页设备卡片，不在升级页。"""
+        self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+        self.runner.dismiss_app_update()
+        self._return_home()
+        time.sleep(0.6)
+        self._touch()
+
+    def _reveal_for_identity(self) -> None:
+        """眼镜设备名在首页卡片，不走手表那套设备 tab。"""
+        self.session.prepare_for_app(self.pkg, allow_relaunch=True)
+        self.runner.dismiss_app_update()
+        self._return_home()
+        time.sleep(0.6)
+        self._touch()
+
     # ---------- 进升级页 ----------
 
     def _open_ready(self) -> str:
@@ -284,7 +300,7 @@ class GlassFlow(DafitFlow):
                 if inject_due(None, "", [], phase == "running", elapsed, threshold, fallback):
                     self.trigger = "升级中触发"
                     self._say(f"[{self.case_id} {self.case_name}] 执行干扰")
-                    self._inject(actions)
+                    self._inject(actions, watch=watch)
                     injected = True
                     self.injected = True
                     if self.switch_failed:
